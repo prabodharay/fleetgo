@@ -1,0 +1,55 @@
+import org.gradle.api.tasks.Delete
+import org.gradle.api.file.Directory
+
+buildscript {
+    val kotlin_version = "1.9.22"
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        // ✅ Android Gradle Plugin (REQUIRED)
+        classpath("com.android.tools.build:gradle:8.1.0")
+
+        // ✅ Kotlin Plugin
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+
+        // ✅ Firebase Google Services
+        classpath("com.google.gms:google-services:4.4.2")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+/**
+ * Fix for Flutter build directory layout
+ */
+val newBuildDir: Directory =
+    rootProject.layout.buildDirectory
+        .dir("../../build")
+        .get()
+
+rootProject.layout.buildDirectory.value(newBuildDir)
+
+subprojects {
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
+}
+
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+/**
+ * Clean task
+ */
+tasks.register<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
+}

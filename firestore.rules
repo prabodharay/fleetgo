@@ -1,0 +1,363 @@
+rules_version = '2';
+
+service cloud.firestore {
+
+  match /databases/{database}/documents {
+
+    /*
+    ==========================
+    Helper Functions
+    ==========================
+    */
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return request.auth.token.role == "admin";
+    }
+
+    function isDriver() {
+      return request.auth.token.role == "driver";
+    }
+
+    function isCustomer() {
+      return request.auth.token.role == "customer";
+    }
+
+    function isFleetOwner() {
+      return request.auth.token.role == "fleet_owner";
+    }
+
+    function isCorporate() {
+      return request.auth.token.role == "corporate";
+    }
+
+    function isSelf(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isDriverOwner(driverId) {
+      return request.auth.uid == driverId;
+    }
+
+    function isCustomerOwner(customerId) {
+      return request.auth.uid == customerId;
+    }
+
+    /*
+    ==========================
+    Users
+    ==========================
+    */
+
+    match /users/{userId} {
+
+      allow read: if isAuthenticated() && isSelf(userId);
+
+      allow create: if isAuthenticated();
+
+      allow update: if isSelf(userId);
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Drivers
+    ==========================
+    */
+
+    match /drivers/{driverId} {
+
+      allow read: if isAuthenticated();
+
+      allow create: if isDriverOwner(driverId);
+
+      allow update: if isDriverOwner(driverId);
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Vehicles
+    ==========================
+    */
+
+    match /vehicles/{vehicleId} {
+
+      allow read: if isAuthenticated();
+
+      allow create: if isDriver();
+
+      allow update: if isDriver();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Bookings
+    ==========================
+    */
+
+    match /bookings/{bookingId} {
+
+      allow create: if isCustomer();
+
+      allow read: if isAuthenticated();
+
+      allow update: if
+        (
+          isCustomer() &&
+          resource.data.customerId == request.auth.uid
+        )
+        ||
+        (
+          isDriver() &&
+          resource.data.driverId == request.auth.uid
+        )
+        ||
+        isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Driver Jobs (Dispatch)
+    ==========================
+    */
+
+    match /driver_jobs/{driverId} {
+
+      allow read: if isDriverOwner(driverId) || isAdmin();
+
+      allow create: if isAdmin();
+
+      allow update: if isDriverOwner(driverId);
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Wallets
+    ==========================
+    */
+
+    match /wallets/{walletId} {
+
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated();
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Wallet Transactions
+    ==========================
+    */
+
+    match /wallet_transactions/{txId} {
+
+      allow read: if isAuthenticated();
+
+      allow create: if isAdmin();
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    /*
+    ==========================
+    Payouts
+    ==========================
+    */
+
+    match /payouts/{payoutId} {
+
+      allow read: if isDriver() || isAdmin();
+
+      allow create: if isAdmin();
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Dispatch Rejections
+    ==========================
+    */
+
+    match /dispatch_rejections/{docId} {
+
+      allow read: if isAdmin();
+
+      allow create: if isDriver();
+
+      allow update: if false;
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Corporate Accounts
+    ==========================
+    */
+
+    match /corporate_accounts/{companyId} {
+
+      allow read: if isCorporate() || isAdmin();
+
+      allow create: if isAdmin();
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Corporate Bookings
+    ==========================
+    */
+
+    match /corporate_bookings/{bookingId} {
+
+      allow create: if isCorporate();
+
+      allow read: if isCorporate() || isAdmin();
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Reviews
+    ==========================
+    */
+
+    match /reviews/{reviewId} {
+
+      allow read: if true;
+
+      allow create: if isCustomer();
+
+      allow update: if false;
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Notifications
+    ==========================
+    */
+
+    match /notifications/{notificationId} {
+
+      allow read: if isAuthenticated();
+
+      allow create: if isAdmin();
+
+      allow update: if false;
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Support Tickets
+    ==========================
+    */
+
+    match /support_tickets/{ticketId} {
+
+      allow create: if isAuthenticated();
+
+      allow read: if isAuthenticated();
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Surge Zones
+    ==========================
+    */
+
+    match /surge_zones/{zoneId} {
+
+      allow read: if true;
+
+      allow create: if isAdmin();
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Promo Codes
+    ==========================
+    */
+
+    match /promo_codes/{promoId} {
+
+      allow read: if true;
+
+      allow create: if isAdmin();
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+    ==========================
+    Audit Logs
+    ==========================
+    */
+
+    match /audit_logs/{logId} {
+
+      allow read: if isAdmin();
+
+      allow create: if isAdmin();
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    /*
+    ==========================
+    Analytics
+    ==========================
+    */
+
+    match /investor_metrics/{metricId} {
+
+      allow read: if isAdmin();
+
+      allow write: if isAdmin();
+    }
+
+  }
+}

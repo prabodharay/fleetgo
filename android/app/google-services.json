@@ -1,0 +1,29 @@
+{
+    "project_info": {
+      "project_number": "89374637352",
+      "project_id": "fleetgo-a8645",
+      "storage_bucket": "fleetgo-a8645.firebasestorage.app"
+    },
+    "client": [
+      {
+        "client_info": {
+          "mobilesdk_app_id": "1:89374637352:android:433b45fc018ae8ff48641d",
+          "android_client_info": {
+            "package_name": "com.example.fleetgo"
+          }
+        },
+        "oauth_client": [],
+        "api_key": [
+          {
+            "current_key": "AIzaSyBxDF9yS8y5Tj0RZ0MtGvXYvWjSQJ8kjHg"
+          }
+        ],
+        "services": {
+          "appinvite_service": {
+            "other_platform_oauth_client": []
+          }
+        }
+      }
+    ],
+    "configuration_version": "1"
+  }
