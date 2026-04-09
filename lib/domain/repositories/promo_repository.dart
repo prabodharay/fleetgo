@@ -1,0 +1,1 @@
+// promo_repository initialized

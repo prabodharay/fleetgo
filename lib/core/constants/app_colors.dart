@@ -1,0 +1,1 @@
+// app_colors initialized

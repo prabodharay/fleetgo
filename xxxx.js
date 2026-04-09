@@ -1,210 +1,125 @@
 const fs = require("fs");
 const path = require("path");
 
-////////////////////////////////////////////////////////
-/// BACKEND SETUP
-////////////////////////////////////////////////////////
+const ROOT = "C:/Users/Asus/fleetgo/lib";
 
-function write(file, content) {
-  const dir = path.dirname(file);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, content);
-  console.log("✅ CREATED:", file);
-}
+// ============================
+// TEMPLATE GENERATORS
+// ============================
 
-// ================= BACKEND =================
-
-write("./backend/server.js", `
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-
-const app = express();
-app.use(express.json());
-
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-
-let drivers = {};
-let bookings = [];
-
-// SOCKET CONNECTION
-io.on("connection", (socket) => {
-  console.log("Driver connected:", socket.id);
-
-  socket.on("driverLocation", (data) => {
-    drivers[socket.id] = data;
-    io.emit("driversUpdate", drivers);
-  });
-
-  socket.on("disconnect", () => {
-    delete drivers[socket.id];
-  });
-});
-
-// CREATE BOOKING
-app.post("/booking", (req, res) => {
-  const booking = {
-    id: Date.now(),
-    status: "pending",
-  };
-
-  bookings.push(booking);
-
-  // AUTO ASSIGN FIRST DRIVER
-  const driverId = Object.keys(drivers)[0];
-
-  if (driverId) {
-    booking.driverId = driverId;
-    booking.status = "assigned";
-
-    io.to(driverId).emit("newBooking", booking);
-  }
-
-  res.json(booking);
-});
-
-server.listen(3000, () => {
-  console.log("🚀 Backend running on http://localhost:3000");
-});
-`);
-
-////////////////////////////////////////////////////////
-/// FLUTTER MAP SCREEN
-////////////////////////////////////////////////////////
-
-write("./lib/maps/live_map.dart", `
+function screenTemplate(name) {
+  return `
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-class LiveMapPage extends StatefulWidget {
-  const LiveMapPage({super.key});
-
-  @override
-  State<LiveMapPage> createState() => _LiveMapPageState();
-}
-
-class _LiveMapPageState extends State<LiveMapPage> {
-
-  final Set<Marker> markers = {};
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Dummy driver marker
-    markers.add(
-      const Marker(
-        markerId: MarkerId("driver1"),
-        position: LatLng(20.2961, 85.8245),
-      ),
-    );
-  }
+class ${name} extends StatelessWidget {
+  const ${name}({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Live Tracking")),
-      body: GoogleMap(
-        initialCameraPosition: const CameraPosition(
-          target: LatLng(20.2961, 85.8245),
-          zoom: 12,
-        ),
-        markers: markers,
-      ),
+      appBar: AppBar(title: const Text('${name}')),
+      body: const Center(child: Text('${name} Screen')),
     );
   }
 }
-`);
+`;
+}
 
-////////////////////////////////////////////////////////
-/// SOCKET SERVICE (FLUTTER)
-////////////////////////////////////////////////////////
-
-write("./lib/core/services/socket_service.dart", `
-import 'package:socket_io_client/socket_io_client.dart' as IO;
-
-class SocketService {
-  static final socket = IO.io(
-    "http://localhost:3000",
-    IO.OptionBuilder().setTransports(['websocket']).build(),
-  );
-
-  static init() {
-    socket.connect();
-
-    socket.on("connect", (_) {
-      print("Connected to backend");
-    });
-
-    socket.on("driversUpdate", (data) {
-      print("Driver Update: \$data");
-    });
+function serviceTemplate(name) {
+  return `
+class ${name} {
+  void init() {
+    print("${name} initialized");
   }
 }
-`);
+`;
+}
 
-////////////////////////////////////////////////////////
-/// DRIVER LOCATION UPDATE
-////////////////////////////////////////////////////////
+function modelTemplate(name) {
+  return `
+class ${name} {
+  final String id;
 
-write("./lib/driver/services/location_service.dart", `
-import '../../core/services/socket_service.dart';
+  ${name}({required this.id});
 
-class LocationService {
-  static sendLocation(double lat, double lng) {
-    SocketService.socket.emit("driverLocation", {
-      "lat": lat,
-      "lng": lng,
-    });
+  factory ${name}.fromMap(Map<String, dynamic> map) {
+    return ${name}(id: map['id'] ?? '');
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+    };
   }
 }
-`);
+`;
+}
 
-////////////////////////////////////////////////////////
-/// CUSTOMER BOOKING API
-////////////////////////////////////////////////////////
+// ============================
+// FILE TYPE DETECTOR
+// ============================
 
-write("./lib/customer/services/booking_api.dart", `
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+function getTemplate(filePath) {
+  const fileName = path.basename(filePath, ".dart");
 
-class BookingAPI {
-  static Future createBooking() async {
-    final res = await http.post(
-      Uri.parse("http://localhost:3000/booking"),
-      headers: {"Content-Type": "application/json"},
-    );
-
-    return jsonDecode(res.body);
+  if (filePath.includes("screen") || filePath.includes("page")) {
+    return screenTemplate(toClassName(fileName));
   }
-}
-`);
 
-////////////////////////////////////////////////////////
-/// MAIN UPDATE
-////////////////////////////////////////////////////////
-
-write("./lib/main.dart", `
-import 'package:flutter/material.dart';
-import 'maps/live_map.dart';
-import 'core/services/socket_service.dart';
-
-void main() {
-  SocketService.init();
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: LiveMapPage(),
-    );
+  if (filePath.includes("service")) {
+    return serviceTemplate(toClassName(fileName));
   }
-}
-`);
 
-console.log("\\n🔥 FleetGo REAL BACKEND + MAPS READY!");
+  if (filePath.includes("model") || filePath.includes("entity")) {
+    return modelTemplate(toClassName(fileName));
+  }
+
+  return `// ${fileName} initialized\n`;
+}
+
+// ============================
+// UTIL
+// ============================
+
+function toClassName(name) {
+  return name
+    .split("_")
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join("");
+}
+
+// ============================
+// MAIN SCAN FUNCTION
+// ============================
+
+function scanDir(dir) {
+  const files = fs.readdirSync(dir);
+
+  files.forEach(file => {
+    const fullPath = path.join(dir, file);
+
+    if (fs.statSync(fullPath).isDirectory()) {
+      scanDir(fullPath);
+    } else if (file.endsWith(".dart")) {
+
+      const content = fs.readFileSync(fullPath, "utf8");
+
+      if (!content || content.trim().length < 50) {
+
+        console.log("⚠️ Fixing:", fullPath);
+
+        const template = getTemplate(fullPath);
+
+        fs.writeFileSync(fullPath, template);
+      }
+    }
+  });
+}
+
+// ============================
+// RUN
+// ============================
+
+console.log("🚀 FleetGo Empty Dart Fix Started...");
+scanDir(ROOT);
+console.log("✅ All empty/missing Dart files fixed!");

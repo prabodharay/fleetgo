@@ -1,0 +1,1 @@
+// vehicle_type initialized

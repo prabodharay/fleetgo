@@ -1,4 +1,6 @@
 
-class PlaceholderScreen {
-  void init() {}
+class NotificationService {
+  void init() {
+    print("NotificationService initialized");
+  }
 }

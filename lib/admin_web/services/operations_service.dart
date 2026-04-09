@@ -1,4 +1,6 @@
 
 class OperationsService {
-  void run() {}
+  void init() {
+    print("OperationsService initialized");
+  }
 }

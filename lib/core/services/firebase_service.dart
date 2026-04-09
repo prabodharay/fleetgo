@@ -1,4 +1,6 @@
 
-class PlaceholderScreen {
-  void init() {}
+class FirebaseService {
+  void init() {
+    print("FirebaseService initialized");
+  }
 }

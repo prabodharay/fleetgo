@@ -1,4 +1,6 @@
 
-class PlaceholderScreen {
-  void init() {}
+class WalletService {
+  void init() {
+    print("WalletService initialized");
+  }
 }
