@@ -1,284 +1,210 @@
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = "./lib";
+////////////////////////////////////////////////////////
+/// BACKEND SETUP
+////////////////////////////////////////////////////////
 
-//////////////////////////////////////////
-// HELPER FUNCTIONS
-//////////////////////////////////////////
-
-function ensureDir(filePath) {
-  const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+function write(file, content) {
+  const dir = path.dirname(file);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, content);
+  console.log("✅ CREATED:", file);
 }
 
-function writeIfEmpty(filePath, content) {
-  ensureDir(filePath);
+// ================= BACKEND =================
 
-  if (!fs.existsSync(filePath) || fs.readFileSync(filePath, "utf8").trim() === "") {
-    fs.writeFileSync(filePath, content);
-    console.log("✅ Created:", filePath);
-  } else {
-    console.log("⏭️ Exists:", filePath);
+write("./backend/server.js", `
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+
+const app = express();
+app.use(express.json());
+
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
+let drivers = {};
+let bookings = [];
+
+// SOCKET CONNECTION
+io.on("connection", (socket) => {
+  console.log("Driver connected:", socket.id);
+
+  socket.on("driverLocation", (data) => {
+    drivers[socket.id] = data;
+    io.emit("driversUpdate", drivers);
+  });
+
+  socket.on("disconnect", () => {
+    delete drivers[socket.id];
+  });
+});
+
+// CREATE BOOKING
+app.post("/booking", (req, res) => {
+  const booking = {
+    id: Date.now(),
+    status: "pending",
+  };
+
+  bookings.push(booking);
+
+  // AUTO ASSIGN FIRST DRIVER
+  const driverId = Object.keys(drivers)[0];
+
+  if (driverId) {
+    booking.driverId = driverId;
+    booking.status = "assigned";
+
+    io.to(driverId).emit("newBooking", booking);
   }
-}
 
-//////////////////////////////////////////
-// CORE FILES
-//////////////////////////////////////////
+  res.json(booking);
+});
 
-writeIfEmpty(`${ROOT}/main.dart`, `
+server.listen(3000, () => {
+  console.log("🚀 Backend running on http://localhost:3000");
+});
+`);
+
+////////////////////////////////////////////////////////
+/// FLUTTER MAP SCREEN
+////////////////////////////////////////////////////////
+
+write("./lib/maps/live_map.dart", `
 import 'package:flutter/material.dart';
-import 'core/app/fleet_go_app.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+class LiveMapPage extends StatefulWidget {
+  const LiveMapPage({super.key});
+
+  @override
+  State<LiveMapPage> createState() => _LiveMapPageState();
+}
+
+class _LiveMapPageState extends State<LiveMapPage> {
+
+  final Set<Marker> markers = {};
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Dummy driver marker
+    markers.add(
+      const Marker(
+        markerId: MarkerId("driver1"),
+        position: LatLng(20.2961, 85.8245),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Live Tracking")),
+      body: GoogleMap(
+        initialCameraPosition: const CameraPosition(
+          target: LatLng(20.2961, 85.8245),
+          zoom: 12,
+        ),
+        markers: markers,
+      ),
+    );
+  }
+}
+`);
+
+////////////////////////////////////////////////////////
+/// SOCKET SERVICE (FLUTTER)
+////////////////////////////////////////////////////////
+
+write("./lib/core/services/socket_service.dart", `
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+
+class SocketService {
+  static final socket = IO.io(
+    "http://localhost:3000",
+    IO.OptionBuilder().setTransports(['websocket']).build(),
+  );
+
+  static init() {
+    socket.connect();
+
+    socket.on("connect", (_) {
+      print("Connected to backend");
+    });
+
+    socket.on("driversUpdate", (data) {
+      print("Driver Update: \$data");
+    });
+  }
+}
+`);
+
+////////////////////////////////////////////////////////
+/// DRIVER LOCATION UPDATE
+////////////////////////////////////////////////////////
+
+write("./lib/driver/services/location_service.dart", `
+import '../../core/services/socket_service.dart';
+
+class LocationService {
+  static sendLocation(double lat, double lng) {
+    SocketService.socket.emit("driverLocation", {
+      "lat": lat,
+      "lng": lng,
+    });
+  }
+}
+`);
+
+////////////////////////////////////////////////////////
+/// CUSTOMER BOOKING API
+////////////////////////////////////////////////////////
+
+write("./lib/customer/services/booking_api.dart", `
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+class BookingAPI {
+  static Future createBooking() async {
+    final res = await http.post(
+      Uri.parse("http://localhost:3000/booking"),
+      headers: {"Content-Type": "application/json"},
+    );
+
+    return jsonDecode(res.body);
+  }
+}
+`);
+
+////////////////////////////////////////////////////////
+/// MAIN UPDATE
+////////////////////////////////////////////////////////
+
+write("./lib/main.dart", `
+import 'package:flutter/material.dart';
+import 'maps/live_map.dart';
+import 'core/services/socket_service.dart';
 
 void main() {
-  runApp(const FleetGoApp());
+  SocketService.init();
+  runApp(const MyApp());
 }
-`);
 
-writeIfEmpty(`${ROOT}/core/app/fleet_go_app.dart`, `
-import 'package:flutter/material.dart';
-import '../routes/app_routes.dart';
-
-class FleetGoApp extends StatelessWidget {
-  const FleetGoApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FleetGo',
-      debugShowCheckedModeBanner: false,
-      initialRoute: '/',
-      routes: AppRoutes.routes,
+    return const MaterialApp(
+      home: LiveMapPage(),
     );
   }
 }
 `);
 
-writeIfEmpty(`${ROOT}/core/routes/app_routes.dart`, `
-import 'package:flutter/material.dart';
-import '../../admin_web/layout/admin_layout.dart';
-import '../../customer/home/customer_home.dart';
-import '../../driver/home/driver_home.dart';
-
-class AppRoutes {
-  static Map<String, WidgetBuilder> routes = {
-    '/': (context) => const RoleSelectPage(),
-    '/admin': (context) => const AdminLayout(),
-    '/driver': (context) => const DriverHome(),
-    '/customer': (context) => const CustomerHome(),
-  };
-}
-
-class RoleSelectPage extends StatelessWidget {
-  const RoleSelectPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-
-            ElevatedButton(
-              onPressed: () => Navigator.pushNamed(context, '/admin'),
-              child: const Text("Admin"),
-            ),
-
-            ElevatedButton(
-              onPressed: () => Navigator.pushNamed(context, '/driver'),
-              child: const Text("Driver"),
-            ),
-
-            ElevatedButton(
-              onPressed: () => Navigator.pushNamed(context, '/customer'),
-              child: const Text("Customer"),
-            ),
-
-          ],
-        ),
-      ),
-    );
-  }
-}
-`);
-
-//////////////////////////////////////////
-// ADMIN LAYOUT
-//////////////////////////////////////////
-
-writeIfEmpty(`${ROOT}/admin_web/layout/admin_layout.dart`, `
-import 'package:flutter/material.dart';
-import '../pages/admin_dashboard_page.dart';
-
-class AdminLayout extends StatefulWidget {
-  const AdminLayout({super.key});
-
-  @override
-  State<AdminLayout> createState() => _AdminLayoutState();
-}
-
-class _AdminLayoutState extends State<AdminLayout> {
-  int index = 0;
-
-  final pages = const [
-    AdminDashboardPage(),
-  ];
-
-  final titles = ["Dashboard"];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Row(
-        children: [
-          Container(
-            width: 200,
-            color: Colors.black,
-            child: ListView.builder(
-              itemCount: titles.length,
-              itemBuilder: (_, i) => ListTile(
-                title: Text(titles[i], style: const TextStyle(color: Colors.white)),
-                onTap: () => setState(() => index = i),
-              ),
-            ),
-          ),
-          Expanded(child: pages[index])
-        ],
-      ),
-    );
-  }
-}
-`);
-
-//////////////////////////////////////////
-// ADMIN PAGES
-//////////////////////////////////////////
-
-writeIfEmpty(`${ROOT}/admin_web/pages/admin_dashboard_page.dart`, `
-import 'package:flutter/material.dart';
-
-class AdminDashboardPage extends StatelessWidget {
-  const AdminDashboardPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text("Admin Dashboard"),
-    );
-  }
-}
-`);
-
-writeIfEmpty(`${ROOT}/admin_web/pages/pricing_settings_page.dart`, `
-import 'package:flutter/material.dart';
-
-class PricingSettingsPage extends StatelessWidget {
-  const PricingSettingsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text("Pricing Settings"));
-  }
-}
-`);
-
-writeIfEmpty(`${ROOT}/admin_web/pages/refund_requests_page.dart`, `
-import 'package:flutter/material.dart';
-
-class RefundRequestsPage extends StatelessWidget {
-  const RefundRequestsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text("Refund Requests"));
-  }
-}
-`);
-
-writeIfEmpty(`${ROOT}/admin_web/pages/surge_zone_settings_page.dart`, `
-import 'package:flutter/material.dart';
-
-class SurgeZoneSettingsPage extends StatelessWidget {
-  const SurgeZoneSettingsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text("Surge Zone Settings"));
-  }
-}
-`);
-
-//////////////////////////////////////////
-// DRIVER
-//////////////////////////////////////////
-
-writeIfEmpty(`${ROOT}/driver/home/driver_home.dart`, `
-import 'package:flutter/material.dart';
-
-class DriverHome extends StatelessWidget {
-  const DriverHome({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Driver App")),
-      body: const Center(child: Text("Driver Dashboard")),
-    );
-  }
-}
-`);
-
-//////////////////////////////////////////
-// CUSTOMER
-//////////////////////////////////////////
-
-writeIfEmpty(`${ROOT}/customer/home/customer_home.dart`, `
-import 'package:flutter/material.dart';
-
-class CustomerHome extends StatelessWidget {
-  const CustomerHome({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Customer App")),
-      body: Column(
-        children: const [
-          TextField(decoration: InputDecoration(hintText: "Pickup")),
-          TextField(decoration: InputDecoration(hintText: "Drop")),
-        ],
-      ),
-    );
-  }
-}
-`);
-
-//////////////////////////////////////////
-// SERVICES (FIX EMPTY FILES)
-//////////////////////////////////////////
-
-writeIfEmpty(`${ROOT}/admin_web/services/admin_session.dart`, `
-class AdminSession {
-  static String role = "admin";
-}
-`);
-
-writeIfEmpty(`${ROOT}/admin_web/services/admin_revenue_service.dart`, `
-class AdminRevenueService {
-  double getRevenue() => 0;
-}
-`);
-
-writeIfEmpty(`${ROOT}/admin_web/services/operations_service.dart`, `
-class OperationsService {
-  void run() {}
-}
-`);
-
-//////////////////////////////////////////
-
-console.log("\\n🚀 FleetGo Project Fixed & Generated Successfully!");
+console.log("\\n🔥 FleetGo REAL BACKEND + MAPS READY!");
